@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lunar Image Registration — SIH 2026 | SIH26166</title>
+  <meta name="description"
+    content="Automated correspondence and geometric registration of lunar optical imagery using SIFT feature detection, descriptor matching and robust geometric estimation. Smart India Hackathon 2026 — Problem Statement SIH26166." />
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+
+  <!-- ── Navigation ───────────────────────────────────────────── -->
+  <nav class="nav" role="navigation" aria-label="Main navigation">
+    <div class="nav-inner">
+      <div class="nav-logo">
+        <div class="nav-logo-icon" aria-hidden="true">🌕</div>
+        <span class="nav-logo-text">Lunar Registration</span>
+      </div>
+
+      <ul class="nav-links" role="list">
+        <li><a href="#section-input">Overview</a></li>
+        <li><a href="#section-results">Analysis</a></li>
+        <li><a href="#section-methodology">Methodology</a></li>
+      </ul>
+
+    </div>
+  </nav>
+
+  <!-- ── Hero ─────────────────────────────────────────────────── -->
+  <header class="hero">
+    <div class="hero-eyebrow">
+      <span class="hero-dot" aria-hidden="true"></span>
+      <span class="hero-eyebrow-text">Chandrayaan-2 · OHRC · TMC-2 · IIRS</span>
+    </div>
+
+    <h1 class="hero-title">
+      Lunar Image<br /><span>Registration</span>
+    </h1>
+
+    <p class="hero-subtitle">
+      Automated correspondence and geometric registration of lunar optical imagery using
+      scale-invariant feature detection, descriptor matching, robust geometric estimation,
+      and quantitative quality metrics. Prototype for multi-modal, sun-angle and scale
+      invariant image correspondence.
+    </p>
+
+    <div class="hero-meta">
+      <span class="badge badge-blue">Smart India Hackathon 2026</span>
+      <span class="badge badge-amber">Problem Statement SIH26166</span>
+      <span class="badge"
+        style="background:rgba(34,211,238,0.1);color:#22d3ee;border:1px solid rgba(34,211,238,0.2)">ISRO · Space
+        Applications</span>
+    </div>
+  </header>
+
+  <div class="divider" aria-hidden="true"></div>
+
+  <!-- ── Section 1: Image Input ───────────────────────────────── -->
+  <section id="section-input" class="section" aria-labelledby="input-title">
+    <div class="section-header">
+      <p class="section-label">Step 1</p>
+      <h2 id="input-title" class="section-title">Image Input</h2>
+      <p class="section-desc">Select or drag &amp; drop your lunar source image. The backend uses <code
+          style="font-family:var(--font-mono);font-size:11px;background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:3px;">data/reference.jpg</code>
+        as the fixed reference.</p>
+    </div>
+
+    <div class="upload-grid">
+      <!-- Reference Image Card (placeholder — fixed backend) -->
+      <div class="upload-card" id="ref-upload-card">
+        <div class="upload-card-header">
+          <div class="upload-card-title">
+            <div class="upload-card-icon ref" aria-hidden="true">📡</div>
+            <span class="upload-card-name">Reference Image</span>
+          </div>
+          <span class="upload-card-tag fixed">Fixed · Backend</span>
+        </div>
+        <div class="upload-zone">
+          <div class="reference-placeholder">
+            <div class="reference-placeholder-icon" aria-hidden="true">🗺️</div>
+            <p class="reference-placeholder-label">reference.jpg</p>
+            <p class="reference-placeholder-note">
+              The backend uses <strong>data/reference.jpg</strong> as the fixed reference image.<br />
+              Reference upload endpoint is reserved for future integration.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Source Image Card (active upload) -->
+      <div class="upload-card" id="src-upload-card">
+        <div class="upload-card-header">
+          <div class="upload-card-title">
+            <div class="upload-card-icon src" aria-hidden="true">🛰️</div>
+            <span class="upload-card-name">Source Image</span>
+          </div>
+          <span class="upload-card-tag active">Upload Required</span>
+        </div>
+        <div class="upload-zone">
+          <!-- Drop zone (hidden after selection) -->
+          <div class="drop-zone" id="drop-zone" role="button" aria-label="Upload source image — click or drag and drop">
+            <div class="drop-zone-icon" aria-hidden="true">🖼️</div>
+            <p class="drop-zone-label">Drop lunar image here</p>
+            <p class="drop-zone-sub">or <span>click to browse</span> · JPG, PNG, TIF</p>
+            <input type="file" id="source-file-input" accept=".jpg,.jpeg,.png,.tif,.tiff"
+              aria-label="Select source image file" />
+          </div>
+
+          <!-- Preview (shown after selection) -->
+          <div class="img-preview-wrap" id="src-preview-wrap">
+            <img id="src-preview-img" src="" alt="Selected source image preview" />
+            <button class="btn-remove" id="btn-remove-src" aria-label="Remove selected image">✕ Remove</button>
+            <div class="img-preview-meta">
+              <span class="img-preview-filename" id="src-filename">—</span>
+              <span class="img-preview-size" id="src-filesize">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Register Button -->
+    <div class="register-row">
+      <button class="btn-register" id="btn-register" disabled aria-label="Register images — runs the full pipeline">
+        <span class="btn-icon" aria-hidden="true">⚙️</span>
+        Register Images
+      </button>
+    </div>
+
+    <!-- Error Banner -->
+    <div class="error-banner" id="error-banner" role="alert" aria-live="polite">
+      <p class="error-title"><span aria-hidden="true">⚠️</span> <span id="error-title-text">Registration Failed</span>
+      </p>
+      <p id="error-detail"></p>
+    </div>
+
+    <!-- Processing Panel -->
+    <div class="processing-panel" id="processing-panel" role="status" aria-live="polite" aria-label="Processing status">
+      <div class="processing-header">
+        <div class="processing-spinner" aria-hidden="true"></div>
+        <div>
+          <p class="processing-title">Running Registration Pipeline</p>
+          <p class="processing-subtitle">SIFT → Matching → RANSAC → Homography → Registration → Metrics</p>
+        </div>
+      </div>
+      <div class="processing-stages" id="processing-stages">
+        <div class="stage-item" data-stage="0" id="stage-0">
+          <div class="stage-icon" aria-hidden="true">1</div>
+          <span class="stage-name">Detecting keypoints</span>
+        </div>
+        <div class="stage-item" data-stage="1" id="stage-1">
+          <div class="stage-icon" aria-hidden="true">2</div>
+          <span class="stage-name">Computing descriptors</span>
+        </div>
+        <div class="stage-item" data-stage="2" id="stage-2">
+          <div class="stage-icon" aria-hidden="true">3</div>
+          <span class="stage-name">Matching features</span>
+        </div>
+        <div class="stage-item" data-stage="3" id="stage-3">
+          <div class="stage-icon" aria-hidden="true">4</div>
+          <span class="stage-name">Running RANSAC</span>
+        </div>
+        <div class="stage-item" data-stage="4" id="stage-4">
+          <div class="stage-icon" aria-hidden="true">5</div>
+          <span class="stage-name">Estimating transformation</span>
+        </div>
+        <div class="stage-item" data-stage="5" id="stage-5">
+          <div class="stage-icon" aria-hidden="true">6</div>
+          <span class="stage-name">Generating registered image</span>
+        </div>
+        <div class="stage-item" data-stage="6" id="stage-6">
+          <div class="stage-icon" aria-hidden="true">7</div>
+          <span class="stage-name">Calculating metrics</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider" aria-hidden="true"></div>
+
+  <!-- ── Section 2 + 3: Results ────────────────────────────────── -->
+  <section id="section-results" class="section results-section" aria-labelledby="results-title">
+    <div class="section-header">
+      <p class="section-label">Registration Analysis</p>
+      <h2 id="results-title" class="section-title">Registration Results</h2>
+      <p class="section-desc">Quantitative metrics computed from the SIFT–RANSAC–Homography pipeline applied to the
+        uploaded source image.</p>
+    </div>
+
+    <!-- Row 1: Keypoint & Match Metrics -->
+    <div class="metrics-grid" role="list" aria-label="Registration metrics">
+
+      <div class="metric-card" role="listitem" style="--metric-accent:#a78bfa"
+        data-tip="Total keypoints detected in the reference image by SIFT">
+        <p class="metric-label">Reference Keypoints</p>
+        <p class="metric-value" id="val-ref-kp">—</p>
+        <p class="metric-desc">SIFT keypoints in reference</p>
+      </div>
+
+      <div class="metric-card" role="listitem" style="--metric-accent:#60a5fa"
+        data-tip="Total keypoints detected in the source image by SIFT">
+        <p class="metric-label">Source Keypoints</p>
+        <p class="metric-value" id="val-src-kp">—</p>
+        <p class="metric-desc">SIFT keypoints in source</p>
+      </div>
+
+      <div class="metric-card" role="listitem" style="--metric-accent:#22d3ee"
+        data-tip="Matches surviving Lowe's ratio test (threshold 0.75)">
+        <p class="metric-label">Good Matches</p>
+        <p class="metric-value" id="val-good-matches">—</p>
+        <p class="metric-desc">Post Lowe ratio test</p>
+      </div>
+
+      <div class="metric-card" role="listitem" style="--metric-accent:#34d399"
+        data-tip="Geometrically consistent matches retained by RANSAC">
+        <p class="metric-label">RANSAC Inliers</p>
+        <p class="metric-value" id="val-inliers">—</p>
+        <p class="metric-desc">Geometric inliers</p>
+      </div>
+    </div>
+
+    <!-- Row 2: Quality Indicators (highlighted) -->
+    <div class="metrics-row2" role="list" aria-label="Quality indicator metrics">
+
+      <div class="metric-card highlight" role="listitem" style="--metric-accent:#f87171"
+        data-tip="Rejected matches — geometrically inconsistent under the estimated homography">
+        <p class="metric-label">RANSAC Outliers</p>
+        <p class="metric-value" id="val-outliers">—</p>
+        <p class="metric-desc">Rejected correspondences</p>
+      </div>
+
+      <div class="metric-card highlight" role="listitem" style="--metric-accent:#34d399"
+        data-tip="Inlier ratio = RANSAC inliers / good matches × 100%. Higher is better.">
+        <p class="metric-label">Inlier Ratio</p>
+        <p class="metric-value accent" id="val-inlier-ratio">—</p>
+        <p class="metric-desc">Geometric consistency</p>
+      </div>
+
+      <div class="metric-card highlight" role="listitem" style="--metric-accent:#fbbf24"
+        data-tip="Root mean square reprojection error over RANSAC inlier points (pixels)">
+        <p class="metric-label">RMSE</p>
+        <p class="metric-value accent" id="val-rmse">—</p>
+        <p class="metric-desc">Reprojection error (pixels)</p>
+      </div>
+
+      <div class="metric-card highlight" role="listitem" style="--metric-accent:#a78bfa"
+        data-tip="Fraction of 4×4 grid cells of the reference image covered by inlier correspondences">
+        <p class="metric-label">Spatial Coverage</p>
+        <p class="metric-value accent" id="val-coverage">—</p>
+        <p class="metric-desc" id="val-coverage-cells">— of 16 grid cells</p>
+      </div>
+    </div>
+
+    <!-- Section 3: Image Comparison (Tabs) -->
+    <div class="section-header" style="margin-top:var(--space-xl)">
+      <p class="section-label">Output Imagery</p>
+      <h3 class="section-title">Image Comparison</h3>
+      <p class="section-desc">Toggle between original, registered, blended overlay, and RANSAC correspondence
+        visualizations.</p>
+    </div>
+
+    <div class="tabs-header" role="tablist" aria-label="Image comparison tabs">
+      <button class="tab-btn active" id="tab-original" role="tab" aria-selected="true"
+        aria-controls="pane-original">Original</button>
+      <button class="tab-btn" id="tab-registered" role="tab" aria-selected="false"
+        aria-controls="pane-registered">Registered</button>
+      <button class="tab-btn" id="tab-overlay" role="tab" aria-selected="false"
+        aria-controls="pane-overlay">Overlay</button>
+      <button class="tab-btn" id="tab-ransac" role="tab" aria-selected="false" aria-controls="pane-ransac">RANSAC
+        Matches</button>
+    </div>
+
+    <div id="pane-original" class="tab-pane active" role="tabpanel" aria-labelledby="tab-original">
+      <div class="image-display-card">
+        <div class="image-placeholder" id="orig-placeholder">
+          <div class="image-placeholder-icon" aria-hidden="true">🖼️</div>
+          <p class="image-placeholder-text">Upload and register an image to view it here.</p>
+        </div>
+        <img id="img-original" src="" alt="Original uploaded source image" style="display:none" />
+      </div>
+    </div>
+
+    <div id="pane-registered" class="tab-pane" role="tabpanel" aria-labelledby="tab-registered">
+      <div class="image-display-card">
+        <div class="image-placeholder" id="reg-placeholder">
+          <div class="image-placeholder-icon" aria-hidden="true">🌐</div>
+          <p class="image-placeholder-text">Registered image will appear after processing.</p>
+        </div>
+        <img id="img-registered" src="" alt="Registered source image warped to reference coordinates"
+          style="display:none" />
+      </div>
+    </div>
+
+    <div id="pane-overlay" class="tab-pane" role="tabpanel" aria-labelledby="tab-overlay">
+      <div class="image-display-card">
+        <div class="image-placeholder" id="ovl-placeholder">
+          <div class="image-placeholder-icon" aria-hidden="true">🔍</div>
+          <p class="image-placeholder-text">Blended overlay will appear after processing.</p>
+        </div>
+        <img id="img-overlay" src="" alt="50/50 blended overlay of reference and registered source"
+          style="display:none" />
+      </div>
+    </div>
+
+    <div id="pane-ransac" class="tab-pane" role="tabpanel" aria-labelledby="tab-ransac">
+      <div class="image-display-card">
+        <div class="image-placeholder" id="rsc-placeholder">
+          <div class="image-placeholder-icon" aria-hidden="true">🔗</div>
+          <p class="image-placeholder-text">RANSAC matches visualization will appear after processing.</p>
+        </div>
+        <img id="img-ransac" src="" alt="RANSAC inlier matches drawn between reference and source images"
+          style="display:none" />
+      </div>
+    </div>
+  </section>
+
+  <div class="divider" aria-hidden="true"></div>
+
+  <!-- ── Section 4: Feature Correspondence ─────────────────────── -->
+  <section id="section-correspondence" class="section results-section" aria-labelledby="corr-title">
+    <div class="section-header">
+      <p class="section-label">Section 4</p>
+      <h2 id="corr-title" class="section-title">Feature Correspondence</h2>
+      <p class="section-desc">Geometrically consistent feature correspondences retained after RANSAC, drawn between the
+        reference (left) and source (right) images.</p>
+    </div>
+
+    <div class="correspondence-card">
+      <div class="correspondence-header">
+        <div>
+          <p style="font-size:13px;font-weight:600;color:var(--text-primary)">RANSAC Inlier Matches</p>
+          <p style="font-size:11px;color:var(--text-muted);margin-top:2px">Only geometrically consistent matches are
+            shown</p>
+        </div>
+        <div class="correspondence-legend">
+          <div class="legend-item">
+            <div class="legend-dot" style="background:#22d3ee"></div>
+            <span>Keypoints</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background:#60a5fa"></div>
+            <span>Matches</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background:#34d399"></div>
+            <span>Inliers</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background:#f87171"></div>
+            <span>Outliers (hidden)</span>
+          </div>
+        </div>
+      </div>
+      <div class="correspondence-img-wrap">
+        <div class="image-placeholder" id="corr-placeholder">
+          <div class="image-placeholder-icon" aria-hidden="true">🔗</div>
+          <p class="image-placeholder-text">RANSAC correspondence image will appear after registration.</p>
+        </div>
+        <img id="img-correspondence" src="" alt="RANSAC inlier feature correspondences"
+          style="display:none;width:100%;height:auto;max-height:500px;object-fit:contain;" />
+      </div>
+    </div>
+  </section>
+
+  <div class="divider" aria-hidden="true"></div>
+
+  <!-- ── Section 5: Quality Summary ───────────────────────────── -->
+  <section id="section-quality" class="section results-section" aria-labelledby="quality-title">
+    <div class="section-header">
+      <p class="section-label">Section 5</p>
+      <h2 id="quality-title" class="section-title">Registration Quality</h2>
+      <p class="section-desc">Technical interpretation of the three primary quality indicators.</p>
+    </div>
+
+    <div class="quality-grid">
+      <div class="quality-card">
+        <p class="quality-card-label">Inlier Ratio</p>
+        <p class="quality-card-metric" style="color:var(--accent-green)" id="qs-inlier-ratio">—</p>
+        <p class="quality-card-desc">
+          Percentage of matched feature pairs that remain geometrically consistent
+          under the estimated homography after RANSAC filtering.
+          A high inlier ratio indicates strong geometric agreement between the two images.
+        </p>
+      </div>
+      <div class="quality-card">
+        <p class="quality-card-label">RMSE (Reprojection Error)</p>
+        <p class="quality-card-metric" style="color:var(--accent-amber)" id="qs-rmse">—</p>
+        <p class="quality-card-desc">
+          Root mean square error of the geometric reprojection over RANSAC inlier
+          correspondences, measured in pixels. Quantifies the average residual
+          misalignment of retained feature pairs.
+        </p>
+      </div>
+      <div class="quality-card">
+        <p class="quality-card-label">Spatial Coverage</p>
+        <p class="quality-card-metric" style="color:var(--accent-violet)" id="qs-coverage">—</p>
+        <p class="quality-card-desc">
+          Fraction of a 4×4 regular grid over the reference image that contains at least
+          one RANSAC inlier correspondence. Indicates how broadly the valid correspondences
+          are distributed across the image area.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider" aria-hidden="true"></div>
+
+  <!-- ── Section 6: Workflow ───────────────────────────────────── -->
+  <section id="section-workflow" class="section" aria-labelledby="workflow-title">
+    <div class="section-header">
+      <p class="section-label">Section 6</p>
+      <h2 id="workflow-title" class="section-title">Processing Pipeline</h2>
+      <p class="section-desc">End-to-end methodology from image input to registration output and quality metrics.</p>
+    </div>
+
+    <div
+      style="background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:var(--space-lg) var(--space-xl);overflow-x:auto;">
+      <div class="workflow-wrap" role="img" aria-label="Processing pipeline diagram">
+        <div class="workflow-step">
+          <div class="workflow-node">
+            <div class="workflow-node-icon">📂</div>
+            <span class="workflow-node-label">Image<br />Input</span>
+          </div>
+        </div>
+        <div class="workflow-arrow" aria-hidden="true"></div>
+        <div class="workflow-step">
+          <div class="workflow-node">
+            <div class="workflow-node-icon">🔍</div>
+            <span class="workflow-node-label">SIFT<br />Detection</span>
+          </div>
+        </div>
+        <div class="workflow-arrow" aria-hidden="true"></div>
+        <div class="workflow-step">
+          <div class="workflow-node">
+            <div class="workflow-node-icon">🧮</div>
+            <span class="workflow-node-label">Descriptor<br />Extraction</span>
+          </div>
+        </div>
+        <div class="workflow-arrow" aria-hidden="true"></div>
+        <div class="workflow-step">
+          <div class="workflow-node">
+            <div class="workflow-node-icon">🔗</div>
+            <span class="workflow-node-label">Feature<br />Matching</span>
+          </div>
+        </div>
+        <div class="workflow-arrow" aria-hidden="true"></div>
+        <div class="workflow-step">
+          <div class="workflow-node">
+            <div class="workflow-node-icon">⚖️</div>
+            <span class="workflow-node-label">Lowe<br />Ratio Test</span>
+          </div>
+        </div>
+        <div class="workflow-arrow" aria-hidden="true"></div>
+        <div class="workflow-step">
+          <div class="workflow-node">
+            <div class="workflow-node-icon">🎯</div>
+            <span class="workflow-node-label">RANSAC</span>
+          </div>
+        </div>
+        <div class="workflow-arrow" aria-hidden="true"></div>
+        <div class="workflow-step">
+          <div class="workflow-node">
+            <div class="workflow-node-icon">📐</div>
+            <span class="workflow-node-label">Homography<br />Estimation</span>
+          </div>
+        </div>
+        <div class="workflow-arrow" aria-hidden="true"></div>
+        <div class="workflow-step">
+          <div class="workflow-node">
+            <div class="workflow-node-icon">🌐</div>
+            <span class="workflow-node-label">Image<br />Registration</span>
+          </div>
+        </div>
+        <div class="workflow-arrow" aria-hidden="true"></div>
+        <div class="workflow-step">
+          <div class="workflow-node">
+            <div class="workflow-node-icon">📊</div>
+            <span class="workflow-node-label">Quality<br />Metrics</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider" aria-hidden="true"></div>
+
+  <!-- ── Section 7: Technical Methodology ─────────────────────── -->
+  <section id="section-methodology" class="section" aria-labelledby="method-title">
+    <div class="section-header">
+      <p class="section-label">Section 7</p>
+      <h2 id="method-title" class="section-title">Technical Methodology</h2>
+      <p class="section-desc">Implementation details of the current baseline pipeline.</p>
+    </div>
+
+    <div class="methodology-wrap">
+      <button class="methodology-toggle" id="methodology-toggle" aria-expanded="false"
+        aria-controls="methodology-content">
+        <span>Expand Technical Details</span>
+        <span class="methodology-chevron">▼</span>
+      </button>
+      <div class="methodology-content" id="methodology-content" role="region">
+        <table class="methodology-table">
+          <thead>
+            <tr>
+              <th>Component</th>
+              <th>Method / Parameter</th>
+              <th>Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Feature Detector</td>
+              <td><span class="method-mono">cv2.SIFT_create()</span></td>
+              <td>Scale-Invariant Feature Transform — detects local extrema in scale space, robust to scale and rotation
+                changes.</td>
+            </tr>
+            <tr>
+              <td>Descriptor</td>
+              <td><span class="method-mono">128-dimensional float</span></td>
+              <td>Gradient orientation histogram over a 4×4 spatial grid of 4×4 cells, each with 8 orientation bins.
+              </td>
+            </tr>
+            <tr>
+              <td>Matcher</td>
+              <td><span class="method-mono">cv2.BFMatcher(NORM_L2)</span></td>
+              <td>Brute-force k-NN matcher (k=2) using Euclidean distance over descriptor vectors.</td>
+            </tr>
+            <tr>
+              <td>Match Filtering</td>
+              <td><span class="method-mono">Lowe ratio = 0.75</span></td>
+              <td>A match is retained only if its distance is less than 75% of the second-best match distance.</td>
+            </tr>
+            <tr>
+              <td>Outlier Rejection</td>
+              <td><span class="method-mono">cv2.findHomography(RANSAC, 5.0px)</span></td>
+              <td>RANSAC with reprojection threshold 5.0 px. Iteratively selects a minimal sample set and counts inliers
+                to identify the consensus model.</td>
+            </tr>
+            <tr>
+              <td>Transformation Model</td>
+              <td><span class="method-mono">Homography H ∈ ℝ³ˣ³</span></td>
+              <td>8-DOF projective transformation mapping source image coordinates to reference image coordinates.</td>
+            </tr>
+            <tr>
+              <td>Warping</td>
+              <td><span class="method-mono">cv2.warpPerspective()</span></td>
+              <td>Applies the estimated homography H to warp the source image to the reference frame.</td>
+            </tr>
+            <tr>
+              <td>Quality — RMSE</td>
+              <td><span class="method-mono">√mean(‖H·src_i − ref_i‖²)</span></td>
+              <td>Average reprojection error of RANSAC inlier pairs under the final homography. Measured in pixels.</td>
+            </tr>
+            <tr>
+              <td>Quality — Spatial Coverage</td>
+              <td><span class="method-mono">4×4 grid occupancy</span></td>
+              <td>Number of 4×4 grid cells in the reference image containing ≥1 inlier correspondence, divided by 16.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="methodology-note">
+          <strong>Note — Baseline Pipeline:</strong>
+          This prototype implements a classical SIFT-based monocular image registration pipeline as an MVP baseline.
+          For production multi-modal registration (OHRC ↔ TMC-2 ↔ IIRS cross-spectral correspondence),
+          the pipeline can be extended with learned feature descriptors (SuperPoint, DISK),
+          cross-modal matchers (LightGlue, LoFTR), and band-specific normalisation.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider" aria-hidden="true"></div>
+
+  <!-- ── Footer ────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <p class="footer-title">Smart India Hackathon 2026</p>
+    <p class="footer-sub">Space Technology · Lunar Image Analysis · Problem Statement SIH26166</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+
+</html>

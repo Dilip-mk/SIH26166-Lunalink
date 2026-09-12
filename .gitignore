@@ -1,0 +1,12 @@
+﻿backend/venv/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+
+data/uploads/
+data/*_keypoints.jpg
+data/good_matches.jpg
+data/*_ransac_inliers.jpg
+data/*_registered.jpg
+data/*_overlay.jpg
