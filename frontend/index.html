@@ -63,29 +63,37 @@
     <div class="section-header">
       <p class="section-label">Step 1</p>
       <h2 id="input-title" class="section-title">Image Input</h2>
-      <p class="section-desc">Select or drag &amp; drop your lunar source image. The backend uses <code
-          style="font-family:var(--font-mono);font-size:11px;background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:3px;">data/reference.jpg</code>
-        as the fixed reference.</p>
+      <p class="section-desc">Select or drag &amp; drop both your lunar <strong>reference</strong> and <strong>source</strong> images. The pipeline will register the source image to the reference coordinate frame.</p>
     </div>
 
     <div class="upload-grid">
-      <!-- Reference Image Card (placeholder — fixed backend) -->
+      <!-- Reference Image Card (active upload) -->
       <div class="upload-card" id="ref-upload-card">
         <div class="upload-card-header">
           <div class="upload-card-title">
             <div class="upload-card-icon ref" aria-hidden="true">📡</div>
             <span class="upload-card-name">Reference Image</span>
           </div>
-          <span class="upload-card-tag fixed">Fixed · Backend</span>
+          <span class="upload-card-tag active" id="ref-upload-tag">Upload Required</span>
         </div>
         <div class="upload-zone">
-          <div class="reference-placeholder">
-            <div class="reference-placeholder-icon" aria-hidden="true">🗺️</div>
-            <p class="reference-placeholder-label">reference.jpg</p>
-            <p class="reference-placeholder-note">
-              The backend uses <strong>data/reference.jpg</strong> as the fixed reference image.<br />
-              Reference upload endpoint is reserved for future integration.
-            </p>
+          <!-- Drop zone (hidden after selection) -->
+          <div class="drop-zone" id="ref-drop-zone" role="button" aria-label="Upload reference image — click or drag and drop">
+            <div class="drop-zone-icon" aria-hidden="true">🗺️</div>
+            <p class="drop-zone-label">Drop reference image here</p>
+            <p class="drop-zone-sub">or <span>click to browse</span> · JPG, PNG, TIF</p>
+            <input type="file" id="ref-file-input" accept=".jpg,.jpeg,.png,.tif,.tiff"
+              aria-label="Select reference image file" />
+          </div>
+
+          <!-- Preview (shown after selection) -->
+          <div class="img-preview-wrap" id="ref-preview-wrap">
+            <img id="ref-preview-img" src="" alt="Selected reference image preview" />
+            <button class="btn-remove" id="btn-remove-ref" aria-label="Remove selected reference image">✕ Remove</button>
+            <div class="img-preview-meta">
+              <span class="img-preview-filename" id="ref-filename">—</span>
+              <span class="img-preview-size" id="ref-filesize">—</span>
+            </div>
           </div>
         </div>
       </div>
@@ -97,13 +105,13 @@
             <div class="upload-card-icon src" aria-hidden="true">🛰️</div>
             <span class="upload-card-name">Source Image</span>
           </div>
-          <span class="upload-card-tag active">Upload Required</span>
+          <span class="upload-card-tag active" id="src-upload-tag">Upload Required</span>
         </div>
         <div class="upload-zone">
           <!-- Drop zone (hidden after selection) -->
-          <div class="drop-zone" id="drop-zone" role="button" aria-label="Upload source image — click or drag and drop">
+          <div class="drop-zone" id="src-drop-zone" role="button" aria-label="Upload source image — click or drag and drop">
             <div class="drop-zone-icon" aria-hidden="true">🖼️</div>
-            <p class="drop-zone-label">Drop lunar image here</p>
+            <p class="drop-zone-label">Drop source image here</p>
             <p class="drop-zone-sub">or <span>click to browse</span> · JPG, PNG, TIF</p>
             <input type="file" id="source-file-input" accept=".jpg,.jpeg,.png,.tif,.tiff"
               aria-label="Select source image file" />
@@ -112,7 +120,7 @@
           <!-- Preview (shown after selection) -->
           <div class="img-preview-wrap" id="src-preview-wrap">
             <img id="src-preview-img" src="" alt="Selected source image preview" />
-            <button class="btn-remove" id="btn-remove-src" aria-label="Remove selected image">✕ Remove</button>
+            <button class="btn-remove" id="btn-remove-src" aria-label="Remove selected source image">✕ Remove</button>
             <div class="img-preview-meta">
               <span class="img-preview-filename" id="src-filename">—</span>
               <span class="img-preview-size" id="src-filesize">—</span>

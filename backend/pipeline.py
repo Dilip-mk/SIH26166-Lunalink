@@ -1,13 +1,19 @@
 import os
 import sys
+import uuid
 import cv2
 import numpy as np
 
 
-def run_pipeline(source_path):
-    # Resolve script directory and reference image path
+def run_pipeline(source_path, reference_path=None):
+    # Resolve script directory
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    ref_path = os.path.normpath(os.path.join(script_dir, "..", "data", "reference.jpg"))
+
+    # Resolve reference image path — use provided path or fall back to fixed reference.jpg
+    if reference_path is not None:
+        ref_path = os.path.normpath(reference_path)
+    else:
+        ref_path = os.path.normpath(os.path.join(script_dir, "..", "data", "reference.jpg"))
 
     if os.path.isabs(source_path):
         src_path = os.path.normpath(source_path)
@@ -18,14 +24,17 @@ def run_pipeline(source_path):
     else:
         src_path = os.path.normpath(os.path.join(script_dir, "..", "data", source_path))
 
-    ref_filename = os.path.basename(ref_path)
     src_filename = os.path.basename(src_path)
     src_stem = os.path.splitext(src_filename)[0]
 
+    # Use a unique run ID so repeated registrations don't overwrite each other's outputs
+    run_id = uuid.uuid4().hex[:8]
+    output_stem = f"{src_stem}_{run_id}"
+
     data_dir = os.path.normpath(os.path.join(script_dir, "..", "data"))
-    registered_path = os.path.normpath(os.path.join(data_dir, f"{src_stem}_registered.jpg"))
-    overlay_path = os.path.normpath(os.path.join(data_dir, f"{src_stem}_overlay.jpg"))
-    inliers_path = os.path.normpath(os.path.join(data_dir, f"{src_stem}_ransac_inliers.jpg"))
+    registered_path = os.path.normpath(os.path.join(data_dir, f"{output_stem}_registered.jpg"))
+    overlay_path = os.path.normpath(os.path.join(data_dir, f"{output_stem}_overlay.jpg"))
+    inliers_path = os.path.normpath(os.path.join(data_dir, f"{output_stem}_ransac_inliers.jpg"))
 
     # 1. Error handling: Check missing image files
     if not os.path.exists(ref_path):

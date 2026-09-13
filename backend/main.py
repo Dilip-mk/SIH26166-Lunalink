@@ -30,6 +30,33 @@ os.makedirs(DATA_DIR, exist_ok=True)
 app.mount("/outputs", StaticFiles(directory=DATA_DIR), name="outputs")
 
 
+def _validate_and_save(file: UploadFile, label: str, save_dir: str) -> str:
+    """Validate extension and save an uploaded file to save_dir. Returns absolute saved path."""
+    if not file or not file.filename:
+        raise HTTPException(status_code=400, detail=f"No {label} file provided.")
+
+    filename = os.path.basename(file.filename)
+    ext = os.path.splitext(filename)[1].lower()
+
+    if ext not in ALLOWED_EXTENSIONS:
+        allowed_str = ", ".join(sorted(ALLOWED_EXTENSIONS))
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{ext}' for {label}. Allowed: {allowed_str}",
+        )
+
+    os.makedirs(save_dir, exist_ok=True)
+    saved_path = os.path.normpath(os.path.join(save_dir, filename))
+
+    try:
+        with open(saved_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save {label}: {str(e)}")
+
+    return saved_path
+
+
 def _path_to_output_url(fs_path: str) -> str:
     """Convert an absolute filesystem path inside data/ to a browser-accessible /outputs/ URL."""
     filename = os.path.basename(fs_path)
@@ -38,98 +65,41 @@ def _path_to_output_url(fs_path: str) -> str:
 
 @app.post("/upload")
 async def upload_image(file: UploadFile = File(...)):
-    # 1. Error handling: Check for missing file or filename
-    if not file or not file.filename:
-        raise HTTPException(status_code=400, detail="No file provided.")
-
-    filename = os.path.basename(file.filename)
-    ext = os.path.splitext(filename)[1].lower()
-
-    # 2. Error handling: Validate file extension
-    if ext not in ALLOWED_EXTENSIONS:
-        allowed_str = ", ".join(sorted(ALLOWED_EXTENSIONS))
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type '{ext}'. Allowed image extensions: {allowed_str}",
-        )
-
-    # 3. Create target uploads directory if it does not exist
-    try:
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to create uploads directory: {str(e)}",
-        )
-
-    # 4. Save the uploaded image preserving original filename
-    saved_path = os.path.normpath(os.path.join(UPLOAD_DIR, filename))
-    try:
-        with open(saved_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to save uploaded image: {str(e)}",
-        )
-
+    saved_path = _validate_and_save(file, "image", UPLOAD_DIR)
     return {
         "message": "Image uploaded successfully",
-        "filename": filename,
+        "filename": os.path.basename(saved_path),
         "saved_path": saved_path,
     }
 
 
 @app.post("/register")
-async def register_image(file: UploadFile = File(...)):
-    # 1. Error handling: Check for missing file or filename
-    if not file or not file.filename:
-        raise HTTPException(status_code=400, detail="No file provided.")
+async def register_image(
+    reference_file: UploadFile = File(...),
+    source_file: UploadFile = File(...),
+):
+    """
+    Accept reference and source images, run the full SIFT→RANSAC→Homography pipeline,
+    and return metrics + browser-accessible output image URLs.
+    """
+    # Save both uploaded files to data/uploads/
+    ref_path = _validate_and_save(reference_file, "reference_file", UPLOAD_DIR)
+    src_path = _validate_and_save(source_file, "source_file", UPLOAD_DIR)
 
-    filename = os.path.basename(file.filename)
-    ext = os.path.splitext(filename)[1].lower()
-
-    # 2. Error handling: Validate file extension
-    if ext not in ALLOWED_EXTENSIONS:
-        allowed_str = ", ".join(sorted(ALLOWED_EXTENSIONS))
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type '{ext}'. Allowed image extensions: {allowed_str}",
-        )
-
-    # 3. Create target uploads directory if it does not exist
+    # Run the CV pipeline with both paths
     try:
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to create uploads directory: {str(e)}",
-        )
-
-    # 4. Save the uploaded source image preserving original filename
-    saved_path = os.path.normpath(os.path.join(UPLOAD_DIR, filename))
-    try:
-        with open(saved_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to save uploaded image: {str(e)}",
-        )
-
-    # 5. Call pipeline processing
-    try:
-        results = run_pipeline(saved_path)
+        results = run_pipeline(source_path=src_path, reference_path=ref_path)
     except Exception as e:
         raise HTTPException(
             status_code=400,
             detail=f"Registration processing failed: {str(e)}",
         )
 
-    # 6. Format API response — convert Windows filesystem paths to browser-accessible /outputs/ URLs
+    # Return metrics and browser-accessible /outputs/ URLs
     return {
         "message": "Registration completed successfully",
-        "filename": filename,
+        "reference_filename": os.path.basename(ref_path),
+        "source_filename": os.path.basename(src_path),
         "metrics": {
             "reference_keypoints": results["reference_keypoints"],
             "source_keypoints": results["source_keypoints"],

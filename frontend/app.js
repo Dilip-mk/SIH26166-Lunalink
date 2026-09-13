@@ -3,20 +3,35 @@
  * Frontend Application Logic
  *
  * Connects to FastAPI backend at http://localhost:8000
- * POST /register  →  multipart/form-data  →  field: "file"
+ * POST /register  →  multipart/form-data  →  fields: "reference_file", "source_file"
  */
 
 const API_BASE = 'http://localhost:8000';
 const API_REGISTER = `${API_BASE}/register`;
 
 // ── DOM References ────────────────────────────────────────────────
+
+// Reference image elements
+const refInput        = document.getElementById('ref-file-input');
+const refDropZone     = document.getElementById('ref-drop-zone');
+const refPreviewWrap  = document.getElementById('ref-preview-wrap');
+const refPreviewImg   = document.getElementById('ref-preview-img');
+const refFilename     = document.getElementById('ref-filename');
+const refFilesize     = document.getElementById('ref-filesize');
+const btnRemoveRef    = document.getElementById('btn-remove-ref');
+const refUploadTag    = document.getElementById('ref-upload-tag');
+
+// Source image elements
 const sourceInput     = document.getElementById('source-file-input');
-const dropZone        = document.getElementById('drop-zone');
+const srcDropZone     = document.getElementById('src-drop-zone');
 const srcPreviewWrap  = document.getElementById('src-preview-wrap');
 const srcPreviewImg   = document.getElementById('src-preview-img');
 const srcFilename     = document.getElementById('src-filename');
 const srcFilesize     = document.getElementById('src-filesize');
 const btnRemoveSrc    = document.getElementById('btn-remove-src');
+const srcUploadTag    = document.getElementById('src-upload-tag');
+
+// Shared UI
 const btnRegister     = document.getElementById('btn-register');
 const errorBanner     = document.getElementById('error-banner');
 const errorTitleText  = document.getElementById('error-title-text');
@@ -66,9 +81,11 @@ const methodologyToggle  = document.getElementById('methodology-toggle');
 const methodologyContent = document.getElementById('methodology-content');
 
 // ── State ─────────────────────────────────────────────────────────
-let selectedFile   = null;
-let stageTimerIds  = [];
-let objectUrlToRevoke = null;
+let selectedRefFile    = null;
+let selectedSrcFile    = null;
+let stageTimerIds      = [];
+let refObjectUrl       = null;
+let srcObjectUrl       = null;
 
 // Processing stage definitions
 const STAGES = [
@@ -84,7 +101,7 @@ const STAGES = [
 // Approximate per-stage delay in ms (visual only — does NOT fake progress)
 const STAGE_DELAY = 520;
 
-// ── File Selection Handling ───────────────────────────────────────
+// ── Utility ───────────────────────────────────────────────────────
 
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -92,101 +109,185 @@ function formatBytes(bytes) {
   return `${(bytes / 1048576).toFixed(2)} MB`;
 }
 
-function applyFile(file) {
-  if (!file) return;
+const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'tif', 'tiff'];
 
-  // Validate extension
+function validateExtension(file) {
   const ext = file.name.split('.').pop().toLowerCase();
-  const allowed = ['jpg', 'jpeg', 'png', 'tif', 'tiff'];
-  if (!allowed.includes(ext)) {
+  return ALLOWED_EXTENSIONS.includes(ext);
+}
+
+function updateRegisterButton() {
+  btnRegister.disabled = !(selectedRefFile && selectedSrcFile);
+}
+
+// ── Reference File Handling ───────────────────────────────────────
+
+function applyRefFile(file) {
+  if (!file) return;
+  if (!validateExtension(file)) {
     showError('Unsupported File Type', `"${file.name}" is not a supported image type. Allowed: JPG, PNG, TIF.`);
     return;
   }
 
-  selectedFile = file;
+  selectedRefFile = file;
   hideError();
 
-  // Revoke previous object URL
-  if (objectUrlToRevoke) {
-    URL.revokeObjectURL(objectUrlToRevoke);
-    objectUrlToRevoke = null;
+  if (refObjectUrl) URL.revokeObjectURL(refObjectUrl);
+  refObjectUrl = URL.createObjectURL(file);
+
+  refPreviewImg.src = refObjectUrl;
+  refPreviewImg.alt = `Preview of ${file.name}`;
+  refFilename.textContent = file.name;
+  refFilesize.textContent = formatBytes(file.size);
+
+  refDropZone.style.display = 'none';
+  refPreviewWrap.classList.add('visible');
+  refUploadTag.textContent = 'Selected';
+  refUploadTag.classList.remove('active');
+  refUploadTag.classList.add('fixed');
+
+  updateRegisterButton();
+}
+
+function clearRefFile() {
+  selectedRefFile = null;
+  refInput.value = '';
+
+  if (refObjectUrl) {
+    URL.revokeObjectURL(refObjectUrl);
+    refObjectUrl = null;
   }
 
-  const objectUrl = URL.createObjectURL(file);
-  objectUrlToRevoke = objectUrl;
+  refPreviewImg.src = '';
+  refPreviewWrap.classList.remove('visible');
+  refDropZone.style.display = '';
+  refUploadTag.textContent = 'Upload Required';
+  refUploadTag.classList.add('active');
+  refUploadTag.classList.remove('fixed');
 
-  // Show preview
-  srcPreviewImg.src = objectUrl;
+  updateRegisterButton();
+}
+
+// Reference file input change
+refInput.addEventListener('change', (e) => {
+  if (e.target.files && e.target.files[0]) applyRefFile(e.target.files[0]);
+});
+
+// Reference remove button
+btnRemoveRef.addEventListener('click', (e) => {
+  e.stopPropagation();
+  clearRefFile();
+  hideError();
+  hideResults();
+  resetProcessingUI();
+});
+
+// Reference drag and drop
+refDropZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  refDropZone.classList.add('dragover');
+});
+
+refDropZone.addEventListener('dragleave', (e) => {
+  e.preventDefault();
+  refDropZone.classList.remove('dragover');
+});
+
+refDropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  refDropZone.classList.remove('dragover');
+  const file = e.dataTransfer?.files?.[0];
+  if (file) applyRefFile(file);
+});
+
+// ── Source File Handling ──────────────────────────────────────────
+
+function applySrcFile(file) {
+  if (!file) return;
+  if (!validateExtension(file)) {
+    showError('Unsupported File Type', `"${file.name}" is not a supported image type. Allowed: JPG, PNG, TIF.`);
+    return;
+  }
+
+  selectedSrcFile = file;
+  hideError();
+
+  if (srcObjectUrl) URL.revokeObjectURL(srcObjectUrl);
+  srcObjectUrl = URL.createObjectURL(file);
+
+  srcPreviewImg.src = srcObjectUrl;
   srcPreviewImg.alt = `Preview of ${file.name}`;
   srcFilename.textContent = file.name;
   srcFilesize.textContent = formatBytes(file.size);
 
-  dropZone.style.display = 'none';
+  srcDropZone.style.display = 'none';
   srcPreviewWrap.classList.add('visible');
+  srcUploadTag.textContent = 'Selected';
+  srcUploadTag.classList.remove('active');
+  srcUploadTag.classList.add('fixed');
 
   // Show original in tab
-  imgOriginal.src = objectUrl;
+  imgOriginal.src = srcObjectUrl;
   imgOriginal.style.display = 'block';
   origPlaceholder.style.display = 'none';
 
-  // Enable register button
-  btnRegister.disabled = false;
+  updateRegisterButton();
 }
 
-function clearFile() {
-  selectedFile = null;
+function clearSrcFile() {
+  selectedSrcFile = null;
   sourceInput.value = '';
 
-  if (objectUrlToRevoke) {
-    URL.revokeObjectURL(objectUrlToRevoke);
-    objectUrlToRevoke = null;
+  if (srcObjectUrl) {
+    URL.revokeObjectURL(srcObjectUrl);
+    srcObjectUrl = null;
   }
 
   srcPreviewImg.src = '';
   srcPreviewWrap.classList.remove('visible');
-  dropZone.style.display = '';
+  srcDropZone.style.display = '';
+  srcUploadTag.textContent = 'Upload Required';
+  srcUploadTag.classList.add('active');
+  srcUploadTag.classList.remove('fixed');
 
   // Reset original tab
   imgOriginal.src = '';
   imgOriginal.style.display = 'none';
   origPlaceholder.style.display = '';
 
-  btnRegister.disabled = true;
+  updateRegisterButton();
 }
 
-// File input change
+// Source file input change
 sourceInput.addEventListener('change', (e) => {
-  if (e.target.files && e.target.files[0]) {
-    applyFile(e.target.files[0]);
-  }
+  if (e.target.files && e.target.files[0]) applySrcFile(e.target.files[0]);
 });
 
-// Remove button
+// Source remove button
 btnRemoveSrc.addEventListener('click', (e) => {
   e.stopPropagation();
-  clearFile();
+  clearSrcFile();
   hideError();
   hideResults();
   resetProcessingUI();
 });
 
-// ── Drag and Drop ─────────────────────────────────────────────────
-
-dropZone.addEventListener('dragover', (e) => {
+// Source drag and drop
+srcDropZone.addEventListener('dragover', (e) => {
   e.preventDefault();
-  dropZone.classList.add('dragover');
+  srcDropZone.classList.add('dragover');
 });
 
-dropZone.addEventListener('dragleave', (e) => {
+srcDropZone.addEventListener('dragleave', (e) => {
   e.preventDefault();
-  dropZone.classList.remove('dragover');
+  srcDropZone.classList.remove('dragover');
 });
 
-dropZone.addEventListener('drop', (e) => {
+srcDropZone.addEventListener('drop', (e) => {
   e.preventDefault();
-  dropZone.classList.remove('dragover');
+  srcDropZone.classList.remove('dragover');
   const file = e.dataTransfer?.files?.[0];
-  if (file) applyFile(file);
+  if (file) applySrcFile(file);
 });
 
 // ── Tabs ──────────────────────────────────────────────────────────
@@ -379,7 +480,7 @@ function populateResults(data) {
 // ── Register Button ───────────────────────────────────────────────
 
 btnRegister.addEventListener('click', async () => {
-  if (!selectedFile) return;
+  if (!selectedRefFile || !selectedSrcFile) return;
 
   // Reset previous state
   hideError();
@@ -393,9 +494,10 @@ btnRegister.addEventListener('click', async () => {
   // Start visual stage animation
   startProcessingAnimation();
 
-  // Prepare form data
+  // Prepare form data — send both reference and source files
   const formData = new FormData();
-  formData.append('file', selectedFile);
+  formData.append('reference_file', selectedRefFile);
+  formData.append('source_file', selectedSrcFile);
 
   try {
     const response = await fetch(API_REGISTER, {
@@ -438,8 +540,8 @@ btnRegister.addEventListener('click', async () => {
       showError('Unexpected Error', err.message || String(err));
     }
   } finally {
-    // Re-enable button
-    btnRegister.disabled = false;
+    // Re-enable button only if both files still selected
+    updateRegisterButton();
     btnRegister.innerHTML = '<span class="btn-icon" aria-hidden="true">⚙️</span> Register Images';
   }
 });
