@@ -1,245 +1,363 @@
+"""
+Lunar Image Registration - V2 Modular Pipeline
+Orchestrates preprocessing, correspondence engine matching, uniform spatial selection,
+RANSAC geometric verification, sub-pixel coordinate refinement, image registration, and quality metrics.
+"""
+
 import os
 import sys
+import time
 import uuid
+from typing import Dict, Any, Optional
 import cv2
 import numpy as np
 
+from preprocessing import preprocess_image
+from engine import get_correspondence_engine, MatchResult
+from spatial import (
+    select_uniform_correspondences,
+    draw_spatial_grid_visualization,
+    draw_spatial_selection_visualization,
+)
+from refinement import refine_subpixel_correspondences, compute_reprojection_rmse
 
-def run_pipeline(source_path, reference_path=None):
-    # Resolve script directory
+
+def run_pipeline(
+    source_path: str,
+    reference_path: Optional[str] = None,
+    method: str = "sift",
+    preprocessing: str = "raw",
+    spatial_strategy: str = "grid",
+    max_matches_per_cell: Optional[int] = None,
+    target_total_matches: Optional[int] = None,
+    enable_subpixel: bool = True,
+    ransac_threshold: float = 5.0,
+) -> Dict[str, Any]:
+    """Execute the complete modular lunar image registration pipeline.
+
+    Parameters:
+        source_path: Filepath to the source image (to be warped/registered).
+        reference_path: Filepath to the reference image (target coordinate frame).
+        method: Correspondence algorithm ('sift' baseline). Default: 'sift'.
+        preprocessing: Illumination strategy ('raw', 'clahe', 'normalized'). Default: 'raw'.
+        spatial_strategy: Spatial selection mode ('none', 'grid', 'adaptive_grid'). Default: 'grid'.
+        max_matches_per_cell: Hard cap on matches per grid cell. None lets the strategy decide.
+        target_total_matches: Target total selected matches (used by 'adaptive_grid'). None uses default.
+        enable_subpixel: Whether to apply gradient-based sub-pixel coordinate refinement.
+        ransac_threshold: Maximum reprojection threshold in pixels for RANSAC. Default: 5.0.
+
+    Returns:
+        Dict containing all quantitative registration metrics, timing, and saved output file paths.
+    """
+    start_time = time.perf_counter()
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
-    # Resolve reference image path — use provided path or fall back to fixed reference.jpg
-    if reference_path is not None:
-        ref_path = os.path.normpath(reference_path)
-    else:
-        ref_path = os.path.normpath(os.path.join(script_dir, "..", "data", "reference.jpg"))
+    # 1. Path resolution and validation (No hardcoded reference image)
+    if reference_path is None or not str(reference_path).strip():
+        raise ValueError("Reference image path must be specified. Hardcoded reference is disabled.")
 
-    if os.path.isabs(source_path):
-        src_path = os.path.normpath(source_path)
-    elif os.path.exists(source_path):
-        src_path = os.path.normpath(source_path)
-    elif os.path.dirname(source_path):
-        src_path = os.path.normpath(os.path.join(script_dir, source_path))
-    else:
-        src_path = os.path.normpath(os.path.join(script_dir, "..", "data", source_path))
+    ref_path = os.path.abspath(reference_path)
+    src_path = os.path.abspath(source_path)
 
-    src_filename = os.path.basename(src_path)
-    src_stem = os.path.splitext(src_filename)[0]
-
-    # Use a unique run ID so repeated registrations don't overwrite each other's outputs
-    run_id = uuid.uuid4().hex[:8]
-    output_stem = f"{src_stem}_{run_id}"
-
-    data_dir = os.path.normpath(os.path.join(script_dir, "..", "data"))
-    registered_path = os.path.normpath(os.path.join(data_dir, f"{output_stem}_registered.jpg"))
-    overlay_path = os.path.normpath(os.path.join(data_dir, f"{output_stem}_overlay.jpg"))
-    inliers_path = os.path.normpath(os.path.join(data_dir, f"{output_stem}_ransac_inliers.jpg"))
-
-    # 1. Error handling: Check missing image files
     if not os.path.exists(ref_path):
         raise FileNotFoundError(f"Reference image missing at '{ref_path}'.")
 
     if not os.path.exists(src_path):
         raise FileNotFoundError(f"Source image missing at '{src_path}'.")
 
-    # Load images using OpenCV
+    # 2. Image Loading
     ref_img = cv2.imread(ref_path)
     if ref_img is None:
-        raise ValueError(f"Failed to load reference image from '{ref_path}'.")
+        raise ValueError(f"Failed to read reference image from '{ref_path}'. File may be corrupt or unsupported.")
 
     src_img = cv2.imread(src_path)
     if src_img is None:
-        raise ValueError(f"Failed to load source image from '{src_path}'.")
+        raise ValueError(f"Failed to read source image from '{src_path}'. File may be corrupt or unsupported.")
 
-    # Convert images to grayscale
-    ref_gray = cv2.cvtColor(ref_img, cv2.COLOR_BGR2GRAY)
-    src_gray = cv2.cvtColor(src_img, cv2.COLOR_BGR2GRAY)
+    h_ref, w_ref = ref_img.shape[:2]
+    h_src, w_src = src_img.shape[:2]
 
-    # 2. Detect SIFT keypoints and descriptors
-    sift = cv2.SIFT_create()
-    kp_ref, des_ref = sift.detectAndCompute(ref_gray, None)
-    kp_src, des_src = sift.detectAndCompute(src_gray, None)
+    # 3. Robust Preprocessing
+    ref_gray = preprocess_image(ref_img, mode=preprocessing)
+    src_gray = preprocess_image(src_img, mode=preprocessing)
 
-    # Error handling: Check for missing or empty descriptors
-    if des_ref is None or len(des_ref) == 0:
-        raise ValueError(f"No descriptors computed for reference image '{ref_path}'.")
+    # 4. Correspondence Engine Matching
+    engine = get_correspondence_engine(method=method)
+    match_result: MatchResult = engine.match(reference_gray=ref_gray, source_gray=src_gray)
 
-    if des_src is None or len(des_src) == 0:
-        raise ValueError(f"No descriptors computed for source image '{src_path}'.")
+    num_kp_ref = match_result.reference_keypoints_count
+    num_kp_src = match_result.source_keypoints_count
+    num_candidates = match_result.candidate_matches
+    num_good_matches = match_result.good_matches
 
-    # 3. Match descriptors using BFMatcher with NORM_L2 and k=2
-    bf = cv2.BFMatcher(cv2.NORM_L2)
-    matches = bf.knnMatch(des_ref, des_src, k=2)
-
-    # 4. Apply Lowe's ratio test with threshold 0.75
-    good_matches = []
-    for match_pair in matches:
-        if len(match_pair) == 2:
-            m, n = match_pair
-            if m.distance < 0.75 * n.distance:
-                good_matches.append(m)
-
-    # 5. Error handling: Check if at least 4 good matches exist
-    if len(good_matches) < 4:
+    if num_good_matches < 4:
         raise ValueError(
-            f"Insufficient good matches found ({len(good_matches)} < 4). Cannot estimate homography."
+            f"Insufficient good matches found ({num_good_matches} < 4). "
+            f"Cannot estimate geometric transformation between images."
         )
 
-    # Extract corresponding point coordinates
-    ref_pts = np.float32([kp_ref[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-    src_pts = np.float32([kp_src[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+    # 4b. Pre-selection coverage (before spatial filtering)
+    pre_spatial = select_uniform_correspondences(
+        ref_points=match_result.reference_points,
+        source_points=match_result.source_points,
+        confidences=match_result.confidence_scores,
+        image_shape=(h_ref, w_ref),
+        grid_rows=4,
+        grid_cols=4,
+        spatial_strategy="none",
+    )
+    occupied_cells_before = pre_spatial.occupied_cells
+    spatial_coverage_before = pre_spatial.spatial_coverage
 
-    # 6. Estimate homography transforming SOURCE coordinates to REFERENCE coordinates using RANSAC
-    H, mask = cv2.findHomography(src_pts, ref_pts, cv2.RANSAC, 5.0)
-
-    # Error handling: Homography estimation failure
-    if H is None or mask is None:
-        raise RuntimeError("Homography estimation failed using RANSAC.")
-
-    # 7. Separate RANSAC inliers and outliers
-    mask_ravel = mask.ravel()
-    inlier_indices = np.where(mask_ravel == 1)[0]
-    inlier_matches = [good_matches[i] for i in inlier_indices]
-
-    num_inliers = int(len(inlier_matches))
-    num_outliers = int(len(good_matches) - num_inliers)
-
-    # Error handling: No RANSAC inliers
-    if num_inliers == 0:
-        raise RuntimeError("RANSAC produced zero inliers.")
-
-    # 8. Calculate statistics
-    num_kp_ref = len(kp_ref)
-    num_kp_src = len(kp_src)
-    num_good_matches = len(good_matches)
-    inlier_ratio = (num_inliers / num_good_matches) * 100.0
-
-    # 9. Calculate reprojection RMSE using ONLY RANSAC inlier points
-    inlier_src_pts = src_pts[mask_ravel == 1]
-    inlier_ref_pts = ref_pts[mask_ravel == 1]
-
-    transformed_src_pts = cv2.perspectiveTransform(inlier_src_pts, H)
-    diffs = transformed_src_pts - inlier_ref_pts
-    sq_errors = np.sum(diffs**2, axis=2)
-    rmse = float(np.sqrt(np.mean(sq_errors)))
-
-    # 10. Calculate spatial coverage on a 4 x 4 grid over the reference image
-    h_ref, w_ref = ref_img.shape[:2]
-    cell_w = w_ref / 4.0
-    cell_h = h_ref / 4.0
-
-    occupied_cells = set()
-    for pt in inlier_ref_pts:
-        x, y = pt[0]
-        col = min(3, max(0, int(x / cell_w)))
-        row = min(3, max(0, int(y / cell_h)))
-        occupied_cells.add((row, col))
-
-    occupied_count = len(occupied_cells)
-    total_cells = 16
-    spatial_coverage = (occupied_count / total_cells) * 100.0
-
-    # 11. Register source image using cv2.warpPerspective()
-    registered_img = cv2.warpPerspective(src_img, H, (w_ref, h_ref))
-
-    # 12. Create blended overlay between reference and registered image using cv2.addWeighted()
-    overlay_img = cv2.addWeighted(ref_img, 0.5, registered_img, 0.5, 0)
-
-    # Draw RANSAC inliers visualization
-    inliers_vis = cv2.drawMatches(
-        ref_img,
-        kp_ref,
-        src_img,
-        kp_src,
-        inlier_matches,
-        None,
-        flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS,
+    # 5. Spatial Selection & Distribution
+    spatial_res = select_uniform_correspondences(
+        ref_points=match_result.reference_points,
+        source_points=match_result.source_points,
+        confidences=match_result.confidence_scores,
+        image_shape=(h_ref, w_ref),
+        grid_rows=4,
+        grid_cols=4,
+        max_per_cell=max_matches_per_cell,
+        target_total_matches=target_total_matches,
+        spatial_strategy=spatial_strategy,
+        min_required_matches=4,
     )
 
-    # 13. Save outputs into ../data/ using the source filename
+    selected_ref_pts = spatial_res.selected_ref_points
+    selected_src_pts = spatial_res.selected_source_points
+    num_selected = len(selected_ref_pts)
+
+    # Post-selection coverage
+    occupied_cells_after = spatial_res.occupied_cells
+    spatial_coverage_after = spatial_res.spatial_coverage
+
+    if num_selected < 4:
+        raise ValueError(
+            f"Insufficient matches remaining after spatial selection ({num_selected} < 4)."
+        )
+
+    # 6. RANSAC Geometric Verification & Homography Estimation
+    src_pts_arr = selected_src_pts.reshape(-1, 1, 2)
+    ref_pts_arr = selected_ref_pts.reshape(-1, 1, 2)
+
+    H_initial, mask = cv2.findHomography(src_pts_arr, ref_pts_arr, cv2.RANSAC, ransac_threshold)
+
+    if H_initial is None or mask is None:
+        raise RuntimeError("Homography estimation failed using RANSAC.")
+
+    mask_ravel = mask.ravel()
+    num_inliers = int(np.sum(mask_ravel == 1))
+    num_outliers = int(num_selected - num_inliers)
+
+    if num_inliers == 0:
+        raise RuntimeError("RANSAC geometric verification produced zero inliers.")
+
+    inlier_ratio = (num_inliers / float(num_selected)) * 100.0
+
+    inlier_src_pts = selected_src_pts[mask_ravel == 1]
+    inlier_ref_pts = selected_ref_pts[mask_ravel == 1]
+
+    # Initial reprojection RMSE over inliers
+    initial_rmse = compute_reprojection_rmse(inlier_src_pts, inlier_ref_pts, H_initial)
+
+    # 7. Sub-Pixel Refinement
+    if enable_subpixel and num_inliers >= 4:
+        refinement_res = refine_subpixel_correspondences(
+            ref_gray=ref_gray,
+            src_gray=src_gray,
+            inlier_ref_points=inlier_ref_pts,
+            inlier_src_points=inlier_src_pts,
+            initial_H=H_initial,
+            win_size=(5, 5),
+            max_allowed_shift=2.0,
+        )
+        final_H = refinement_res.refined_homography
+        refined_rmse = refinement_res.refined_rmse
+        rmse_improvement = refinement_res.rmse_improvement
+    else:
+        final_H = H_initial
+        refined_rmse = initial_rmse
+        rmse_improvement = 0.0
+
+    # For backward compatibility, primary rmse metric reports the final evaluated RMSE
+    reported_rmse = refined_rmse if refined_rmse > 0 else initial_rmse
+
+    # 8. Re-calculate spatial coverage based strictly on validated inliers
+    inlier_spatial = select_uniform_correspondences(
+        ref_points=inlier_ref_pts,
+        source_points=inlier_src_pts,
+        confidences=spatial_res.selected_confidences[mask_ravel == 1],
+        image_shape=(h_ref, w_ref),
+        grid_rows=4,
+        grid_cols=4,
+        spatial_strategy="none",
+    )
+    occupied_count = inlier_spatial.occupied_cells
+    total_cells = inlier_spatial.total_cells
+    spatial_coverage = inlier_spatial.spatial_coverage
+
+    # 9. Warp Source Image & Generate Visualizations
+    registered_img = cv2.warpPerspective(src_img, final_H, (w_ref, h_ref))
+    overlay_img = cv2.addWeighted(ref_img, 0.5, registered_img, 0.5, 0)
+
+    # Inliers correspondence visualization
+    # Map inlier indices back to original keypoints if available
+    inlier_orig_indices = spatial_res.selected_indices[mask_ravel == 1]
+    if match_result.raw_dmatches is not None and match_result.keypoints_ref is not None:
+        inlier_dmatches = [match_result.raw_dmatches[i] for i in inlier_orig_indices]
+        inliers_vis = cv2.drawMatches(
+            ref_img,
+            match_result.keypoints_ref,
+            src_img,
+            match_result.keypoints_src,
+            inlier_dmatches,
+            None,
+            flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS,
+        )
+    else:
+        # Fallback correspondence visualization
+        inliers_vis = overlay_img.copy()
+
+    # Spatial distribution visualization (selected points with grid)
+    spatial_vis = draw_spatial_grid_visualization(
+        ref_image=ref_img,
+        ref_points=selected_ref_pts,
+        grid_rows=4,
+        grid_cols=4,
+        inlier_mask=mask_ravel,
+    )
+
+    # Spatial selection visualization (candidates vs selected, with per-cell counts)
+    spatial_sel_vis = draw_spatial_selection_visualization(
+        ref_image=ref_img,
+        all_ref_points=match_result.reference_points,
+        selected_ref_points=selected_ref_pts,
+        grid_rows=4,
+        grid_cols=4,
+        cell_counts=spatial_res.cell_counts,
+    )
+
+    # 10. Save Output Images with Unique Run Stem
+    src_stem = os.path.splitext(os.path.basename(src_path))[0]
+    run_id = uuid.uuid4().hex[:8]
+    output_stem = f"{src_stem}_{run_id}"
+
+    data_dir = os.path.normpath(os.path.join(script_dir, "..", "data"))
     os.makedirs(data_dir, exist_ok=True)
+
+    registered_path = os.path.normpath(os.path.join(data_dir, f"{output_stem}_registered.jpg"))
+    overlay_path = os.path.normpath(os.path.join(data_dir, f"{output_stem}_overlay.jpg"))
+    inliers_path = os.path.normpath(os.path.join(data_dir, f"{output_stem}_ransac_inliers.jpg"))
+    spatial_path = os.path.normpath(os.path.join(data_dir, f"{output_stem}_spatial_grid.jpg"))
+    spatial_sel_path = os.path.normpath(os.path.join(data_dir, f"{output_stem}_spatial_matches.jpg"))
 
     if not cv2.imwrite(registered_path, registered_img):
         raise IOError(f"Failed to save registered image to '{registered_path}'.")
-
     if not cv2.imwrite(overlay_path, overlay_img):
         raise IOError(f"Failed to save overlay image to '{overlay_path}'.")
-
     if not cv2.imwrite(inliers_path, inliers_vis):
         raise IOError(f"Failed to save inliers visualization to '{inliers_path}'.")
+    if not cv2.imwrite(spatial_path, spatial_vis):
+        raise IOError(f"Failed to save spatial visualization to '{spatial_path}'.")
+    if not cv2.imwrite(spatial_sel_path, spatial_sel_vis):
+        raise IOError(f"Failed to save spatial selection visualization to '{spatial_sel_path}'.")
+
+    processing_time = round(time.perf_counter() - start_time, 4)
+
+    # Determine effective max_per_cell for reporting
+    effective_max_per_cell = max_matches_per_cell
+    if effective_max_per_cell is None and spatial_strategy != "none":
+        # Report the computed cap from cell_counts
+        if spatial_res.cell_counts:
+            effective_max_per_cell = max(spatial_res.cell_counts.values())
 
     return {
+        # Preserved V1 Metrics
         "reference_keypoints": num_kp_ref,
         "source_keypoints": num_kp_src,
         "good_matches": num_good_matches,
         "ransac_inliers": num_inliers,
         "ransac_outliers": num_outliers,
         "inlier_ratio": inlier_ratio,
-        "rmse": rmse,
+        "rmse": reported_rmse,
         "spatial_coverage": spatial_coverage,
         "occupied_grid_cells": occupied_count,
         "total_grid_cells": total_cells,
         "registered_image": registered_path,
         "overlay_image": overlay_path,
         "ransac_visualization": inliers_path,
+        # Extended V2 Metrics
+        "method": method,
+        "preprocessing": preprocessing,
+        "candidate_matches": num_candidates,
+        "selected_matches": num_selected,
+        "initial_rmse": initial_rmse,
+        "refined_rmse": refined_rmse,
+        "rmse_improvement": rmse_improvement,
+        "spatial_visualization": spatial_path,
+        "processing_time": processing_time,
+        # Phase 2: Spatial selection metrics
+        "spatial_strategy": spatial_res.strategy,
+        "max_matches_per_cell": effective_max_per_cell,
+        "occupied_grid_cells_before": occupied_cells_before,
+        "occupied_grid_cells_after": occupied_cells_after,
+        "spatial_coverage_before": spatial_coverage_before,
+        "spatial_coverage_after": spatial_coverage_after,
+        "spatial_selection_visualization": spatial_sel_path,
     }
 
 
 def main():
+    """CLI utility for executing the modular pipeline."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
-    # Determine source image path from command-line argument or default to source.jpg
-    if len(sys.argv) > 1:
-        source_arg = sys.argv[1]
-    else:
-        source_arg = "source.jpg"
+    if len(sys.argv) < 3:
+        print("Usage: python pipeline.py <reference_path> <source_path> [method] [preprocessing] [spatial_strategy]")
+        print("Example: python pipeline.py ../data/reference.jpg ../data/source.jpg sift raw grid")
+        sys.exit(1)
+
+    ref_arg = sys.argv[1]
+    src_arg = sys.argv[2]
+    method_arg = sys.argv[3] if len(sys.argv) > 3 else "sift"
+    prep_arg = sys.argv[4] if len(sys.argv) > 4 else "raw"
+    strategy_arg = sys.argv[5] if len(sys.argv) > 5 else "grid"
 
     try:
-        results = run_pipeline(source_arg)
+        results = run_pipeline(
+            source_path=src_arg,
+            reference_path=ref_arg,
+            method=method_arg,
+            preprocessing=prep_arg,
+            spatial_strategy=strategy_arg,
+        )
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    ref_path = os.path.normpath(os.path.join(script_dir, "..", "data", "reference.jpg"))
-    ref_filename = os.path.basename(ref_path)
-
-    if os.path.isabs(source_arg):
-        src_path = os.path.normpath(source_arg)
-    elif os.path.exists(source_arg):
-        src_path = os.path.normpath(source_arg)
-    elif os.path.dirname(source_arg):
-        src_path = os.path.normpath(os.path.join(script_dir, source_arg))
-    else:
-        src_path = os.path.normpath(os.path.join(script_dir, "..", "data", source_arg))
-    src_filename = os.path.basename(src_path)
-
-    # 14. Print clean final report
-    print("=== LUNAR IMAGE REGISTRATION RESULT ===")
+    print("=== LUNAR IMAGE REGISTRATION RESULT (V2) ===")
     print()
-    print(f"Reference: {ref_filename}")
-    print(f"Source: {src_filename}")
+    print(f"Method: {results['method'].upper()} | Preprocessing: {results['preprocessing'].upper()} | Spatial: {results['spatial_strategy'].upper()}")
+    print(f"Processing Time: {results['processing_time']}s")
+    print(f"Reference Keypoints: {results['reference_keypoints']}")
+    print(f"Source Keypoints: {results['source_keypoints']}")
+    print(f"Candidate Matches: {results['candidate_matches']}")
+    print(f"Good Matches (Ratio Test): {results['good_matches']}")
+    print(f"Selected Matches (Spatial): {results['selected_matches']} (max/cell: {results['max_matches_per_cell']})")
+    print(f"RANSAC Inliers: {results['ransac_inliers']}")
+    print(f"RANSAC Outliers: {results['ransac_outliers']}")
+    print(f"Inlier Ratio: {results['inlier_ratio']:.2f}%")
+    print(f"Initial RMSE: {results['initial_rmse']:.4f} px")
+    print(f"Refined RMSE: {results['refined_rmse']:.4f} px (delta: {results['rmse_improvement']:.4f} px)")
+    print(f"Spatial Coverage (before): {results['spatial_coverage_before']:.2f}% ({results['occupied_grid_cells_before']}/16 cells)")
+    print(f"Spatial Coverage (after):  {results['spatial_coverage_after']:.2f}% ({results['occupied_grid_cells_after']}/16 cells)")
+    print(f"Spatial Coverage (inlier): {results['spatial_coverage']:.2f}% ({results['occupied_grid_cells']}/{results['total_grid_cells']} cells)")
     print()
-    print(f"Reference keypoints: {results['reference_keypoints']}")
-    print(f"Source keypoints: {results['source_keypoints']}")
-    print(f"Good matches: {results['good_matches']}")
-    print(f"RANSAC inliers: {results['ransac_inliers']}")
-    print(f"RANSAC outliers: {results['ransac_outliers']}")
-    print(f"Inlier ratio: {results['inlier_ratio']:.2f}%")
-    print(f"RMSE: {results['rmse']:.2f} pixels")
-    print(f"Spatial coverage: {results['spatial_coverage']:.2f}%")
-    print(f"Occupied grid cells: {results['occupied_grid_cells']} / {results['total_grid_cells']}")
-    print()
-    print("Registered image:")
-    print(results['registered_image'])
-    print()
-    print("Overlay image:")
-    print(results['overlay_image'])
-    print()
-    print("RANSAC visualization:")
-    print(results['ransac_visualization'])
+    print(f"Registered Image: {results['registered_image']}")
+    print(f"Overlay Image: {results['overlay_image']}")
+    print(f"RANSAC Inliers Vis: {results['ransac_visualization']}")
+    print(f"Spatial Grid Vis: {results['spatial_visualization']}")
+    print(f"Spatial Selection Vis: {results['spatial_selection_visualization']}")
 
 
 if __name__ == "__main__":
     main()
-

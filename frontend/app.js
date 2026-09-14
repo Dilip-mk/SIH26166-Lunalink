@@ -59,18 +59,29 @@ const qsRmse          = document.getElementById('qs-rmse');
 const qsCoverage      = document.getElementById('qs-coverage');
 
 // Image elements
+const imgReference    = document.getElementById('img-reference');
 const imgOriginal     = document.getElementById('img-original');
 const imgRegistered   = document.getElementById('img-registered');
 const imgOverlay      = document.getElementById('img-overlay');
 const imgRansac       = document.getElementById('img-ransac');
 const imgCorrespondence = document.getElementById('img-correspondence');
+const imgSpatialGrid  = document.getElementById('img-spatial-grid');
+const imgSpatialMatches = document.getElementById('img-spatial-matches');
 
 // Placeholders
+const refImgPlaceholder = document.getElementById('ref-img-placeholder');
 const origPlaceholder = document.getElementById('orig-placeholder');
 const regPlaceholder  = document.getElementById('reg-placeholder');
 const ovlPlaceholder  = document.getElementById('ovl-placeholder');
 const rscPlaceholder  = document.getElementById('rsc-placeholder');
 const corrPlaceholder = document.getElementById('corr-placeholder');
+const sgPlaceholder   = document.getElementById('sg-placeholder');
+const smPlaceholder   = document.getElementById('sm-placeholder');
+
+// Spatial Grid Metric elements
+const sgCoverage      = document.getElementById('sg-coverage');
+const sgCells         = document.getElementById('sg-cells');
+const sgStrategy      = document.getElementById('sg-strategy');
 
 // Tabs
 const tabBtns = document.querySelectorAll('.tab-btn');
@@ -146,6 +157,13 @@ function applyRefFile(file) {
   refUploadTag.classList.remove('active');
   refUploadTag.classList.add('fixed');
 
+  // Show reference in tab
+  if (imgReference) {
+    imgReference.src = refObjectUrl;
+    imgReference.style.display = 'block';
+  }
+  if (refImgPlaceholder) refImgPlaceholder.style.display = 'none';
+
   updateRegisterButton();
 }
 
@@ -164,6 +182,13 @@ function clearRefFile() {
   refUploadTag.textContent = 'Upload Required';
   refUploadTag.classList.add('active');
   refUploadTag.classList.remove('fixed');
+
+  // Reset reference tab
+  if (imgReference) {
+    imgReference.src = '';
+    imgReference.style.display = 'none';
+  }
+  if (refImgPlaceholder) refImgPlaceholder.style.display = '';
 
   updateRegisterButton();
 }
@@ -404,25 +429,32 @@ function hideResults() {
   });
   // Reset metric values
   [valRefKp, valSrcKp, valGoodMatches, valInliers, valOutliers,
-   valInlierRatio, valRmse, valCoverage].forEach(el => { el.textContent = '—'; });
-  valCoverageCells.textContent = '— of 16 grid cells';
-  qsInlierRatio.textContent = '—';
-  qsRmse.textContent = '—';
-  qsCoverage.textContent = '—';
+   valInlierRatio, valRmse, valCoverage].forEach(el => { if (el) el.textContent = '—'; });
+  if (valCoverageCells) valCoverageCells.textContent = '— of 16 grid cells';
+  if (qsInlierRatio) qsInlierRatio.textContent = '—';
+  if (qsRmse) qsRmse.textContent = '—';
+  if (qsCoverage) qsCoverage.textContent = '—';
+
+  if (sgCoverage) sgCoverage.textContent = '—%';
+  if (sgCells) sgCells.textContent = '— / 16';
+  if (sgStrategy) sgStrategy.textContent = '—';
 
   // Reset images
-  [imgRegistered, imgOverlay, imgRansac, imgCorrespondence].forEach(img => {
-    img.src = '';
-    img.style.display = 'none';
+  [imgRegistered, imgOverlay, imgRansac, imgCorrespondence, imgSpatialGrid, imgSpatialMatches].forEach(img => {
+    if (img) {
+      img.src = '';
+      img.style.display = 'none';
+    }
   });
-  [regPlaceholder, ovlPlaceholder, rscPlaceholder, corrPlaceholder].forEach(el => {
-    el.style.display = '';
+  [regPlaceholder, ovlPlaceholder, rscPlaceholder, corrPlaceholder, sgPlaceholder, smPlaceholder].forEach(el => {
+    if (el) el.style.display = '';
   });
 }
 
 // ── Number animation ──────────────────────────────────────────────
 
 function animateNumber(el, target, decimals = 0, suffix = '') {
+  if (!el) return;
   const duration = 600;
   const start = performance.now();
   const from = 0;
@@ -447,34 +479,60 @@ function populateResults(data) {
   const o = data.outputs;
 
   // Animate numeric metrics
-  animateNumber(valRefKp, m.reference_keypoints, 0);
-  animateNumber(valSrcKp, m.source_keypoints, 0);
-  animateNumber(valGoodMatches, m.good_matches, 0);
-  animateNumber(valInliers, m.ransac_inliers, 0);
-  animateNumber(valOutliers, m.ransac_outliers, 0);
-  animateNumber(valInlierRatio, m.inlier_ratio, 2, '%');
-  animateNumber(valRmse, m.rmse, 2, ' px');
-  animateNumber(valCoverage, m.spatial_coverage, 1, '%');
-  valCoverageCells.textContent = `${m.occupied_grid_cells} of ${m.total_grid_cells} grid cells`;
+  if (valRefKp) animateNumber(valRefKp, m.reference_keypoints, 0);
+  if (valSrcKp) animateNumber(valSrcKp, m.source_keypoints, 0);
+  if (valGoodMatches) animateNumber(valGoodMatches, m.good_matches, 0);
+  if (valInliers) animateNumber(valInliers, m.ransac_inliers, 0);
+  if (valOutliers) animateNumber(valOutliers, m.ransac_outliers, 0);
+  if (valInlierRatio) animateNumber(valInlierRatio, m.inlier_ratio, 2, '%');
+  if (valRmse) animateNumber(valRmse, m.rmse, 2, ' px');
+  if (valCoverage) animateNumber(valCoverage, m.spatial_coverage, 1, '%');
+  if (valCoverageCells) valCoverageCells.textContent = `${m.occupied_grid_cells} of ${m.total_grid_cells} grid cells`;
+
+  // Spatial Grid bar metrics
+  if (sgCoverage) animateNumber(sgCoverage, m.spatial_coverage, 1, '%');
+  if (sgCells) sgCells.textContent = `${m.occupied_grid_cells} / ${m.total_grid_cells}`;
+  if (sgStrategy) sgStrategy.textContent = m.spatial_strategy || 'adaptive_grid';
 
   // Quality summary
-  animateNumber(qsInlierRatio, m.inlier_ratio, 2, '%');
-  animateNumber(qsRmse, m.rmse, 2, ' px');
-  animateNumber(qsCoverage, m.spatial_coverage, 1, '%');
+  if (qsInlierRatio) animateNumber(qsInlierRatio, m.inlier_ratio, 2, '%');
+  if (qsRmse) animateNumber(qsRmse, m.rmse, 2, ' px');
+  if (qsCoverage) animateNumber(qsCoverage, m.spatial_coverage, 1, '%');
 
-  // Output images — URLs are /outputs/<filename> relative to API_BASE
-  function setImage(imgEl, placeholder, relUrl) {
-    if (!relUrl) return;
-    const fullUrl = `${API_BASE}${relUrl}`;
+  // Output images — URLs are /outputs/<filename> relative to API_BASE or blob/http
+  function setImage(imgEl, placeholder, relOrFullUrl) {
+    if (!imgEl) return;
+    if (!relOrFullUrl) {
+      if (placeholder) placeholder.style.display = '';
+      imgEl.style.display = 'none';
+      return;
+    }
+    let fullUrl = (relOrFullUrl.startsWith('blob:') || relOrFullUrl.startsWith('http'))
+      ? relOrFullUrl
+      : `${API_BASE}${relOrFullUrl}`;
+
+    // Append timestamp cache-buster for HTTP/HTTPS outputs
+    if (!fullUrl.startsWith('blob:')) {
+      const sep = fullUrl.includes('?') ? '&' : '?';
+      fullUrl = `${fullUrl}${sep}t=${Date.now()}`;
+    }
+
     imgEl.src = fullUrl;
     imgEl.style.display = 'block';
-    placeholder.style.display = 'none';
+    if (placeholder) placeholder.style.display = 'none';
+  }
+
+  // Reference image tab
+  if (imgReference) {
+    setImage(imgReference, refImgPlaceholder, o.reference_image || refObjectUrl);
   }
 
   setImage(imgRegistered,    regPlaceholder,  o.registered_image);
   setImage(imgOverlay,       ovlPlaceholder,  o.overlay_image);
   setImage(imgRansac,        rscPlaceholder,  o.ransac_visualization);
   setImage(imgCorrespondence, corrPlaceholder, o.ransac_visualization);
+  setImage(imgSpatialGrid,   sgPlaceholder,   o.spatial_grid_image || o.spatial_visualization);
+  setImage(imgSpatialMatches, smPlaceholder,  o.spatial_matches_image || o.spatial_selection_visualization);
 }
 
 // ── Register Button ───────────────────────────────────────────────
@@ -482,7 +540,7 @@ function populateResults(data) {
 btnRegister.addEventListener('click', async () => {
   if (!selectedRefFile || !selectedSrcFile) return;
 
-  // Reset previous state
+  // Reset previous state — hide error banner, hide previous results, reset processing UI
   hideError();
   hideResults();
   resetProcessingUI();
@@ -495,55 +553,114 @@ btnRegister.addEventListener('click', async () => {
   startProcessingAnimation();
 
   // Prepare form data — send both reference and source files
+  console.log("REGISTER DEBUG", {
+    referenceFile: selectedRefFile,
+    sourceFile: selectedSrcFile,
+    sourceName: selectedSrcFile?.name,
+    sourceSize: selectedSrcFile?.size,
+    sourceType: selectedSrcFile?.type
+  });
+
   const formData = new FormData();
   formData.append('reference_file', selectedRefFile);
   formData.append('source_file', selectedSrcFile);
 
+  let response;
   try {
-    const response = await fetch(API_REGISTER, {
+    response = await fetch(API_REGISTER, {
       method: 'POST',
       body: formData,
     });
-
-    // Complete animation
-    finishProcessingAnimation();
-
-    if (!response.ok) {
-      let errorMsg = `HTTP ${response.status} ${response.statusText}`;
-      try {
-        const errData = await response.json();
-        if (errData.detail) errorMsg = errData.detail;
-      } catch (_) {}
-      showError('Registration Failed', errorMsg);
-      return;
-    }
-
-    const data = await response.json();
-    populateResults(data);
-    showResults();
-
-    // Scroll to results
-    setTimeout(() => {
-      document.getElementById('section-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 200);
-
+    console.log("REGISTER RESPONSE", response.status, response.ok);
   } catch (err) {
+    console.error("REGISTER FETCH ERROR", err);
     finishProcessingAnimation();
-
-    if (err instanceof TypeError && err.message.toLowerCase().includes('fetch')) {
-      showError(
-        'Cannot Connect to Backend',
-        `The registration service at ${API_BASE} is not responding. ` +
-        `Please start the FastAPI server:\n\n  cd backend\n  uvicorn main:app --reload`
-      );
-    } else {
-      showError('Unexpected Error', err.message || String(err));
-    }
-  } finally {
-    // Re-enable button only if both files still selected
     updateRegisterButton();
     btnRegister.innerHTML = '<span class="btn-icon" aria-hidden="true">⚙️</span> Register Images';
+
+    // Show "Cannot Connect to Backend" ONLY on genuine network failure
+    showError(
+      'Cannot Connect to Backend',
+      `The registration service at ${API_BASE} is not responding (${err.message || err}). ` +
+      `Please start the FastAPI server:\n\n  python run.py\n  OR: python -m uvicorn main:app --port 8000`
+    );
+    return;
   }
+
+  // Complete animation
+  finishProcessingAnimation();
+
+  if (!response.ok) {
+    let errorTitle = 'Registration Failed';
+    let errorMsg = `Server returned HTTP ${response.status} ${response.statusText}`;
+
+    if (response.status === 422) {
+      errorTitle = 'Validation Error (422)';
+    } else if (response.status === 400) {
+      errorTitle = 'Registration Failed (400)';
+    } else if (response.status === 500) {
+      errorTitle = 'Registration Failed (500)';
+    }
+
+    try {
+      const errData = await response.json();
+      if (typeof errData.detail === 'string') {
+        errorMsg = errData.detail;
+      } else if (Array.isArray(errData.detail)) {
+        errorMsg = errData.detail
+          .map(e => (typeof e === 'string' ? e : ((e.loc ? `${e.loc.join('.')}: ` : '') + (e.msg || JSON.stringify(e)))))
+          .join('; ');
+      } else if (errData.detail && typeof errData.detail === 'object') {
+        errorMsg = errData.detail.msg || errData.detail.detail || JSON.stringify(errData.detail);
+      } else if (typeof errData.error === 'string') {
+        errorMsg = errData.error;
+      } else if (typeof errData.message === 'string') {
+        errorMsg = errData.message;
+      } else if (errData) {
+        errorMsg = JSON.stringify(errData);
+      }
+    } catch (_) {
+      errorMsg = `Server returned status ${response.status}, but response body could not be parsed.`;
+    }
+
+    if (typeof errorMsg !== 'string' || errorMsg.includes('[object Object]')) {
+      errorMsg = `Server error (Status ${response.status})`;
+    }
+
+    showError(errorTitle, errorMsg);
+    updateRegisterButton();
+    btnRegister.innerHTML = '<span class="btn-icon" aria-hidden="true">⚙️</span> Register Images';
+    return;
+  }
+
+  let data;
+  try {
+    data = await response.json();
+  } catch (parseErr) {
+    showError('Response Parsing Error', 'The server completed registration, but returned invalid JSON data.');
+    updateRegisterButton();
+    btnRegister.innerHTML = '<span class="btn-icon" aria-hidden="true">⚙️</span> Register Images';
+    return;
+  }
+
+  if (data && data.success === false) {
+    showError('Registration Failed', data.error || 'Registration service returned an error for the uploaded images.');
+    updateRegisterButton();
+    btnRegister.innerHTML = '<span class="btn-icon" aria-hidden="true">⚙️</span> Register Images';
+    return;
+  }
+
+  populateResults(data);
+  showResults();
+
+  // Re-enable button so user can click Register again or upload another image
+  updateRegisterButton();
+  btnRegister.innerHTML = '<span class="btn-icon" aria-hidden="true">⚙️</span> Register Images';
+
+  // Scroll to results
+  setTimeout(() => {
+    document.getElementById('section-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 200);
 });
 
 // ── Nav link smooth scroll ────────────────────────────────────────
@@ -557,3 +674,179 @@ document.querySelectorAll('a[href^="#"]').forEach(link => {
     }
   });
 });
+
+// ── 21st.dev Particle System ──────────────────────────────────────
+//
+// Ported from the 21st.dev ParticlesComponent (React TSX → vanilla JS).
+// particles.js is loaded synchronously before this script via:
+//   <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js">
+//
+// Our app is always dark (deep-space theme), so we always use dark-mode colors.
+// The exact particle config, interactivity modes, opacity/size animation,
+// grab + push modes, retina_detect, and all other settings are preserved
+// verbatim from the original component.
+
+(function initParticleSystem() {
+  // Guard: particles.js must be loaded by now (script tag precedes app.js)
+  if (typeof window.particlesJS !== 'function') {
+    console.warn('[SIH26166] particles.js not yet available — will retry on load');
+    window.addEventListener('load', initParticleSystem);
+    return;
+  }
+
+  // Remove any existing canvas to avoid duplicates (e.g. on hot reload)
+  const oldCanvas = document.querySelector('#particles-js canvas');
+  if (oldCanvas) oldCanvas.remove();
+
+  if (window.pJSDom && window.pJSDom.length > 0) {
+    window.pJSDom.forEach(function (p) {
+      p.pJS.fn.vendors.destroypJS();
+    });
+    window.pJSDom = [];
+  }
+
+  // Dark-mode colors — our app is always in dark (space) mode
+  const colors = {
+    particles : '#00f5ff',   // bright cyan star color
+    lines     : '#00d9ff',   // slightly cooler cyan connection lines
+    accent    : '#0096c7',   // deep-blue stroke accent
+  };
+
+  // ── EXACT 21st.dev structure — refined for deep-space star field ─────────
+  // Visual changes from original:
+  //   • Color: cyan #00f5ff → white/silver/pale-blue palette
+  //   • Opacity: 0.7 → 0.35 (much more subtle)
+  //   • Count: 140 → 115 (lighter density)
+  //   • Line opacity: 0.4 → 0.10 (barely visible threads)
+  //   • Line width: 1.2 → 0.6 (hairline)
+  //   • Link distance: 160 → 120 (fewer connections)
+  //   • Speed: 2 → 1.2 (slow drift)
+  // Interactivity (grab/push) preserved from original component.
+  window.particlesJS('particles-js', {
+    particles: {
+      number: {
+        value: 120,
+        density: { enable: true, value_area: 800 },
+      },
+      color: {
+        // Star palette as requested: #FFFFFF, #DCEBFF, #38BDF8
+        value: ['#FFFFFF', '#FFFFFF', '#DCEBFF', '#38BDF8'],
+      },
+      shape: {
+        type: 'circle',
+        stroke: { width: 0, color: 'transparent' },
+      },
+      opacity: {
+        value: 0.65,              // 0.45 - 0.75 range
+        random: true,
+        anim: {
+          enable: true,
+          speed: 0.6,
+          opacity_min: 0.30,
+          sync: false,
+        },
+      },
+      size: {
+        value: 2.4,              // 1 - 3px range
+        random: true,
+        anim: {
+          enable: true,
+          speed: 1.0,
+          size_min: 1.0,
+          sync: false,
+        },
+      },
+      line_linked: {
+        enable   : true,
+        distance : 120,
+        color    : '#DCEBFF',
+        opacity  : 0.14,          // 0.10 - 0.18 range
+        width    : 0.6,           // 0.5 - 0.8px range
+      },
+      move: {
+        enable    : true,
+        speed     : 0.8,          // slow and subtle drift
+        random    : true,
+        straight  : false,
+        out_mode  : 'bounce',
+        attract   : { enable: false },
+      },
+    },
+    interactivity: {
+      detect_on: 'canvas',
+      events: {
+        onhover : { enable: true, mode: 'grab' },
+        onclick  : { enable: true, mode: 'push' },
+        resize   : true,
+      },
+      modes: {
+        grab: {
+          distance    : 200,
+          line_linked : { opacity: 0.35 },
+        },
+        push: {
+          particles_nb: 3,
+        },
+        repulse: {
+          distance : 160,
+          duration : 0.4,
+        },
+      },
+    },
+    retina_detect: true,
+  });
+})();
+
+// ── ScrollSpy & Smooth Nav Links ─────────────────────────
+(function initDynamicNavbar() {
+  const nav = document.querySelector('.nav');
+  const navLinks = document.querySelectorAll('.nav-links a');
+  const sections = document.querySelectorAll('section[id]');
+
+  if (!nav) return;
+
+  // Active nav link highlighting based on viewport scroll position (ScrollSpy)
+  function handleActiveNav() {
+    let currentSectionId = '';
+    const scrollPos = window.scrollY + 140;
+
+    sections.forEach(section => {
+      const top = section.offsetTop;
+      const height = section.offsetHeight;
+      if (scrollPos >= top && scrollPos < top + height) {
+        currentSectionId = section.getAttribute('id');
+      }
+    });
+
+    navLinks.forEach(link => {
+      const href = link.getAttribute('href');
+      if (href && href.startsWith('#')) {
+        const targetId = href.substring(1);
+        if (targetId === currentSectionId) {
+          link.classList.add('active');
+        } else {
+          link.classList.remove('active');
+        }
+      }
+    });
+  }
+
+  // Bind scroll event for ScrollSpy
+  window.addEventListener('scroll', handleActiveNav, { passive: true });
+  handleActiveNav();
+
+  // Smooth scrolling on nav link click
+  navLinks.forEach(link => {
+    link.addEventListener('click', (e) => {
+      const href = link.getAttribute('href');
+      if (href && href.startsWith('#')) {
+        const targetSection = document.querySelector(href);
+        if (targetSection) {
+          e.preventDefault();
+          targetSection.scrollIntoView({ behavior: 'smooth' });
+        }
+      }
+    });
+  });
+})();
+

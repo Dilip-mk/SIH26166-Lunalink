@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Lunar Image Registration — SIH 2026 | SIH26166</title>
+  <title>LunaLink</title>
   <meta name="description"
     content="Automated correspondence and geometric registration of lunar optical imagery using SIFT feature detection, descriptor matching and robust geometric estimation. Smart India Hackathon 2026 — Problem Statement SIH26166." />
   <link rel="stylesheet" href="style.css" />
@@ -12,25 +12,50 @@
 
 <body>
 
-  <!-- ── Navigation ───────────────────────────────────────────── -->
-  <nav class="nav" role="navigation" aria-label="Main navigation">
-    <div class="nav-inner">
-      <div class="nav-logo">
-        <div class="nav-logo-icon" aria-hidden="true">🌕</div>
-        <span class="nav-logo-text">Lunar Registration</span>
+  <!-- ══ Background Layers ══════════════════════════════════════ -->
+  <!-- Layer 1: Deep-space gradient -->
+  <div id="space-bg" aria-hidden="true"></div>
+
+  <!-- Layer 2: particles.js mount point (21st.dev particle system) -->
+  <div id="particles-js" aria-hidden="true"></div>
+
+  <!-- Layer 3: Subtle atmospheric glow behind Moon -->
+  <div id="moon-glow" aria-hidden="true"></div>
+
+  <!-- Layer 4: Realistic photographic Full Moon -->
+  <!-- Source: NASA / Wikimedia Commons — public domain -->
+  <img
+    id="moon-img"
+    src="assets/moon-full.png"
+    alt=""
+    aria-hidden="true"
+    loading="eager"
+    decoding="async"
+  />
+
+  <!-- ── Navigation Header (Normal Document Flow) ──────────────── -->
+  <header class="app-header">
+    <nav class="nav" role="navigation" aria-label="Main navigation">
+      <div class="nav-inner">
+        <div class="nav-logo">
+          <div class="nav-logo-icon" aria-hidden="true">🌕</div>
+          <span class="nav-logo-text">LunaLink</span>
+        </div>
+
+        <ul class="nav-links" role="list">
+          <li><a href="#section-input">Overview</a></li>
+          <li><a href="#section-results">Analysis</a></li>
+          <li><a href="#section-methodology">Methodology</a></li>
+        </ul>
       </div>
+    </nav>
+  </header>
 
-      <ul class="nav-links" role="list">
-        <li><a href="#section-input">Overview</a></li>
-        <li><a href="#section-results">Analysis</a></li>
-        <li><a href="#section-methodology">Methodology</a></li>
-      </ul>
+  <!-- ── Main Page Content ────────────────────────────────────── -->
+  <main class="app-main">
 
-    </div>
-  </nav>
-
-  <!-- ── Hero ─────────────────────────────────────────────────── -->
-  <header class="hero">
+    <!-- ── Hero ─────────────────────────────────────────────────── -->
+    <section class="hero">
     <div class="hero-eyebrow">
       <span class="hero-dot" aria-hidden="true"></span>
       <span class="hero-eyebrow-text">Chandrayaan-2 · OHRC · TMC-2 · IIRS</span>
@@ -54,7 +79,7 @@
         style="background:rgba(34,211,238,0.1);color:#22d3ee;border:1px solid rgba(34,211,238,0.2)">ISRO · Space
         Applications</span>
     </div>
-  </header>
+  </section>
 
   <div class="divider" aria-hidden="true"></div>
 
@@ -271,56 +296,98 @@
     </div>
 
     <div class="tabs-header" role="tablist" aria-label="Image comparison tabs">
-      <button class="tab-btn active" id="tab-original" role="tab" aria-selected="true"
-        aria-controls="pane-original">Original</button>
-      <button class="tab-btn" id="tab-registered" role="tab" aria-selected="false"
-        aria-controls="pane-registered">Registered</button>
-      <button class="tab-btn" id="tab-overlay" role="tab" aria-selected="false"
-        aria-controls="pane-overlay">Overlay</button>
-      <button class="tab-btn" id="tab-ransac" role="tab" aria-selected="false" aria-controls="pane-ransac">RANSAC
-        Matches</button>
+      <button class="tab-btn active" id="tab-reference" role="tab" aria-selected="true" aria-controls="pane-reference">Reference</button>
+      <button class="tab-btn" id="tab-source" role="tab" aria-selected="false" aria-controls="pane-source">Source</button>
+      <button class="tab-btn" id="tab-registered" role="tab" aria-selected="false" aria-controls="pane-registered">Registered</button>
+      <button class="tab-btn" id="tab-overlay" role="tab" aria-selected="false" aria-controls="pane-overlay">Overlay</button>
+      <button class="tab-btn" id="tab-spatial-grid" role="tab" aria-selected="false" aria-controls="pane-spatial-grid">Spatial Grid</button>
+      <button class="tab-btn" id="tab-spatial-matches" role="tab" aria-selected="false" aria-controls="pane-spatial-matches">Spatial Matches</button>
     </div>
 
-    <div id="pane-original" class="tab-pane active" role="tabpanel" aria-labelledby="tab-original">
+    <!-- Tab 1: Reference -->
+    <div id="pane-reference" class="tab-pane active" role="tabpanel" aria-labelledby="tab-reference">
       <div class="image-display-card">
-        <div class="image-placeholder" id="orig-placeholder">
-          <div class="image-placeholder-icon" aria-hidden="true">🖼️</div>
-          <p class="image-placeholder-text">Upload and register an image to view it here.</p>
+        <div class="image-placeholder" id="ref-img-placeholder">
+          <div class="image-placeholder-icon" aria-hidden="true">📡</div>
+          <p class="image-placeholder-text">Select a reference image to view it here.</p>
         </div>
-        <img id="img-original" src="" alt="Original uploaded source image" style="display:none" />
+        <img id="img-reference" src="" alt="Uploaded reference image" style="display:none" />
       </div>
     </div>
 
+    <!-- Tab 2: Source -->
+    <div id="pane-source" class="tab-pane" role="tabpanel" aria-labelledby="tab-source">
+      <div class="image-display-card">
+        <div class="image-placeholder" id="orig-placeholder">
+          <div class="image-placeholder-icon" aria-hidden="true">🛰️</div>
+          <p class="image-placeholder-text">Select a source image to view it here.</p>
+        </div>
+        <img id="img-original" src="" alt="Uploaded source image" style="display:none" />
+      </div>
+    </div>
+
+    <!-- Tab 3: Registered -->
     <div id="pane-registered" class="tab-pane" role="tabpanel" aria-labelledby="tab-registered">
       <div class="image-display-card">
         <div class="image-placeholder" id="reg-placeholder">
           <div class="image-placeholder-icon" aria-hidden="true">🌐</div>
           <p class="image-placeholder-text">Registered image will appear after processing.</p>
         </div>
-        <img id="img-registered" src="" alt="Registered source image warped to reference coordinates"
-          style="display:none" />
+        <img id="img-registered" src="" alt="Registered source image warped to reference coordinates" style="display:none" />
       </div>
     </div>
 
+    <!-- Tab 4: Overlay -->
     <div id="pane-overlay" class="tab-pane" role="tabpanel" aria-labelledby="tab-overlay">
       <div class="image-display-card">
         <div class="image-placeholder" id="ovl-placeholder">
           <div class="image-placeholder-icon" aria-hidden="true">🔍</div>
           <p class="image-placeholder-text">Blended overlay will appear after processing.</p>
         </div>
-        <img id="img-overlay" src="" alt="50/50 blended overlay of reference and registered source"
-          style="display:none" />
+        <img id="img-overlay" src="" alt="50/50 blended overlay of reference and registered source" style="display:none" />
       </div>
     </div>
 
-    <div id="pane-ransac" class="tab-pane" role="tabpanel" aria-labelledby="tab-ransac">
+    <!-- Tab 5: Spatial Grid -->
+    <div id="pane-spatial-grid" class="tab-pane" role="tabpanel" aria-labelledby="tab-spatial-grid">
       <div class="image-display-card">
-        <div class="image-placeholder" id="rsc-placeholder">
-          <div class="image-placeholder-icon" aria-hidden="true">🔗</div>
-          <p class="image-placeholder-text">RANSAC matches visualization will appear after processing.</p>
+        <div class="spatial-grid-metrics-bar">
+          <div class="sg-metric-item">
+            <span class="sg-metric-label">Spatial Coverage</span>
+            <span class="sg-metric-val" id="sg-coverage">—</span>
+          </div>
+          <div class="sg-metric-item">
+            <span class="sg-metric-label">Occupied Cells</span>
+            <span class="sg-metric-val" id="sg-cells">— / 16</span>
+          </div>
+          <div class="sg-metric-item">
+            <span class="sg-metric-label">Grid Resolution</span>
+            <span class="sg-metric-val">4 × 4</span>
+          </div>
+          <div class="sg-metric-item">
+            <span class="sg-metric-label">Strategy</span>
+            <span class="sg-metric-val" id="sg-strategy">grid</span>
+          </div>
         </div>
-        <img id="img-ransac" src="" alt="RANSAC inlier matches drawn between reference and source images"
-          style="display:none" />
+        <div class="image-placeholder" id="sg-placeholder">
+          <div class="image-placeholder-icon" aria-hidden="true">📊</div>
+          <p class="image-placeholder-text">Spatial grid visualization will appear after processing.</p>
+        </div>
+        <img id="img-spatial-grid" src="" alt="4x4 Spatial Grid Visualization with cell counts" style="display:none" />
+      </div>
+    </div>
+
+    <!-- Tab 6: Spatial Matches -->
+    <div id="pane-spatial-matches" class="tab-pane" role="tabpanel" aria-labelledby="tab-spatial-matches">
+      <div class="image-display-card">
+        <div class="image-placeholder" id="sm-placeholder">
+          <div class="image-placeholder-icon" aria-hidden="true">🎯</div>
+          <p class="image-placeholder-text">Spatial matches visualization will appear after processing.</p>
+        </div>
+        <img id="img-spatial-matches" src="" alt="Confidence-ranked spatial correspondences distribution" style="display:none" />
+        <p class="spatial-caption">
+          Confidence-ranked correspondences selected with spatial constraints to reduce clustering and improve geometric coverage.
+        </p>
       </div>
     </div>
   </section>
@@ -589,7 +656,9 @@
     <p class="footer-title">Smart India Hackathon 2026</p>
     <p class="footer-sub">Space Technology · Lunar Image Analysis · Problem Statement SIH26166</p>
   </footer>
+  </main>
 
+  <script src="assets/particles.min.js"></script>
   <script src="app.js"></script>
 </body>
 
