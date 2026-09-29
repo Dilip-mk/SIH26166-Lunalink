@@ -6,7 +6,7 @@
  * POST /register  →  multipart/form-data  →  fields: "reference_file", "source_file"
  */
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = 'https://sih26166-lunalink.onrender.com';
 const API_REGISTER = `${API_BASE}/register`;
 
 // ── DOM References ────────────────────────────────────────────────
